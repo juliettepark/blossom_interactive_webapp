@@ -1,0 +1,261 @@
+// Juliette Park
+// May 2024
+// garden: an interactive web app using user interaction data
+// to "grow" the flowers.
+// Tilt the breadboard to trigger rainfall and grow the flowers.
+
+// Based on a web serial template for p5.js from the Makeability Lab
+// https://makeabilitylab.github.io/physcomp/communication/p5js-serial
+// by Jon E. Froehlich
+
+// Raindrop based on https://editor.p5js.org/samchasan/sketches/SJfzWJviW
+// Flower rotations based on https://editor.p5js.org/son/sketches/SkJJxG2Cm
+
+let pHtmlMsg;
+let serialOptions = { baudRate: 115200  };
+let serial;
+let currSerialVal = 0;
+let xCurrentPos = 0;
+let accelCurrVal = 0;
+
+
+// const isBlooming = [true, false, false, false];
+const rotations = [0, 0, 0, 0, 0];
+const stems = [100, 150, 130, 147];
+const NUM_FLOWERS = 4;
+const NUM_PETALS = 10;
+const FULL_BLOOM = 600;
+
+const GROUND_HEIGHT = 530;
+
+const CLOUD_Y = 80;
+const CLOUD_WIDTH = 200;
+const CLOUD_HEIGHT = 100;
+
+let rainy = CLOUD_Y + 40;
+let rainx = 50;
+
+let currWateringSection;
+
+
+function setup() {
+  // createCanvas(640, 480);
+  createCanvas(600, 600);
+  
+
+  // Setup Web Serial using serial.js
+  serial = new Serial();
+  serial.on(SerialEvents.CONNECTION_OPENED, onSerialConnectionOpened);
+  serial.on(SerialEvents.CONNECTION_CLOSED, onSerialConnectionClosed);
+  serial.on(SerialEvents.DATA_RECEIVED, onSerialDataReceived);
+  serial.on(SerialEvents.ERROR_OCCURRED, onSerialErrorOccurred);
+
+  // If we have previously approved ports, attempt to connect with them
+  serial.autoConnectAndOpenPreviouslyApprovedPort(serialOptions);
+
+  // Add in a lil <p> element to provide messages. This is optional
+  pHtmlMsg = createP("Click anywhere on this page to open the serial connection dialog");
+  pHtmlMsg.style('color', 'deeppink');
+}
+
+function draw() {
+  
+  // BACKGROUND
+  // background(100, 100, 100);
+  // background(200, 225, 230);
+  background(240, 240, 230);
+  
+  // RAIN
+  if(accelCurrVal < -5.0) {
+    // console.log("Raining");
+    drawRain(50,200,250);
+  }
+  
+  // CLOUD
+  drawCloud();
+  
+  // DRAW FLOWERS
+  for(let i = 0; i < NUM_FLOWERS; i++) {
+    drawStem(i);
+    // fill(230, 190, 230, 240); // color in petals
+    drawFlower(i);
+  }
+  
+  // GROUND
+  drawGround();
+}
+
+
+function drawStem(i) {
+  push();
+  // Placement of stem on screen
+  let flowerX = ((width - 100) / NUM_FLOWERS * i) + 100;
+
+  // stroke(170, 255, 0); // color of stem
+  stroke(206, 235, 207);
+  strokeWeight(3);
+  // x, y, x1, y1
+  line(flowerX, GROUND_HEIGHT, flowerX, GROUND_HEIGHT - stems[i]);
+  pop();
+}
+
+function drawCloud() {
+  push();
+  noStroke();
+  // fill(177, 218, 250);
+  // fill(213, 222, 221);
+  fill(195, 225, 227);
+  // rect(xCurrentPos, CLOUD_Y, CLOUD_WIDTH, CLOUD_HEIGHT);
+  ellipse(xCurrentPos + CLOUD_WIDTH/2, CLOUD_Y, CLOUD_WIDTH, 95);
+  ellipse(xCurrentPos + CLOUD_WIDTH/2 - 30, CLOUD_Y + 30, 80, 70);
+  ellipse(xCurrentPos + CLOUD_WIDTH/2 + 30, CLOUD_Y + 30, 80, 70);
+  ellipse(xCurrentPos + CLOUD_WIDTH/2 - 30, CLOUD_Y - 30, 80, 70);
+  ellipse(xCurrentPos + CLOUD_WIDTH/2 + 30, CLOUD_Y - 30, 80, 70);
+  
+  // Check for which flowers are growing
+  // xCurrentPos is leftmost edge of cloud
+  let cloudMiddle = xCurrentPos + (0.5*CLOUD_WIDTH);
+  // Detect which section the middle is in. Set that cloud to true
+  let section = map(cloudMiddle, 50, width - 50, 0, 4);
+  section = int(section);
+  // console.log("SECTION: " + "" + section);
+  currWateringSection = section;
+  pop();
+}
+
+function drawFlower(i) {
+  // In order to not disrupt future drawings
+  push();
+  
+  // Get color of flower
+  switch(i % 4) {
+  case 0:
+    fill(230, 190, 230, 240); 
+    break;
+  case 1:
+    fill(235, 194, 204, 240);
+    break;
+  case 2:
+    fill(245, 204, 174, 240);
+    break
+  case 3:
+    fill(245, 174, 154, 240);
+    break;
+  default:
+    fill(230, 190, 230, 240); 
+}
+  
+  // Placement of flower
+  let xellipse = ((width - 100) / NUM_FLOWERS * i) + 100;
+  translate(xellipse, GROUND_HEIGHT - stems[i] - 17); // move drawing cursor position
+  noStroke();
+  rotate(radians(frameCount / 2));
+  for (let petal = 0; petal < NUM_PETALS; petal++) {
+    growing = accelCurrVal < -5.0 && currWateringSection == i && rotations[i] <= FULL_BLOOM
+    if(growing) {
+      ellipse(0, 10 + rotations[i] / 20, 10 + rotations[i] / 40, 20 + rotations[i] / 20);
+    } else if(rotations[i] > FULL_BLOOM) {
+      ellipse(0, 40, 25, 50); // max ellipse size
+    } else {
+      petalradius = min(40, 10 + rotations[i] / 20);
+      petalwid = min(25, 10 + rotations[i] / 40);
+      petalhei = min(50, 20 + rotations[i] / 20);
+      ellipse(0, petalradius, petalwid, petalhei);
+    }
+    rotate(PI / 5); 
+  }
+  if(growing) {
+    rotations[i] += 1;
+  }
+  
+  // Restore drawing params
+  pop();
+}
+
+function drawGround() {
+  push();
+  // fill(170, 150, 146, 240);
+  stroke(122, 92, 66);
+  fill(207, 227, 204);
+  rect(0, 530, 600, GROUND_HEIGHT);
+  pop();
+}
+
+function drawRain(r,g,b){
+  push();
+  rainy++;
+  // rainx = xCurrentPos + (CLOUD_WIDTH / 2);
+  
+  noStroke()
+  fill(r,g,b)
+
+  triangle(rainx-10,rainy,rainx+10,rainy,rainx,rainy-40)
+  ellipse(rainx,rainy,20,20);
+  
+  rainy = rainy + 12;
+  
+  if (rainy > height){
+    rainy = CLOUD_Y + 40;
+    rainx = random(xCurrentPos, xCurrentPos + (CLOUD_WIDTH - CLOUD_WIDTH/3));
+  }  
+  pop();
+}
+
+/**
+ * Callback function by serial.js when there is an error on web serial
+ * 
+ * @param {} eventSender 
+ */
+ function onSerialErrorOccurred(eventSender, error) {
+  console.log("onSerialErrorOccurred", error);
+  pHtmlMsg.html(error);
+}
+
+/**
+ * Callback function by serial.js when web serial connection is opened
+ * 
+ * @param {} eventSender 
+ */
+function onSerialConnectionOpened(eventSender) {
+  console.log("onSerialConnectionOpened");
+  pHtmlMsg.html("Serial connection opened successfully");
+}
+
+/**
+ * Callback function by serial.js when web serial connection is closed
+ * 
+ * @param {} eventSender 
+ */
+function onSerialConnectionClosed(eventSender) {
+  console.log("onSerialConnectionClosed");
+  pHtmlMsg.html("onSerialConnectionClosed");
+}
+
+/**
+ * Callback function serial.js when new web serial data is received
+ * 
+ * @param {*} eventSender 
+ * @param {String} newData new data received over serial
+ */
+function onSerialDataReceived(eventSender, newData) {
+  console.log("onSerialDataReceived", newData);
+  pHtmlMsg.html("onSerialDataReceived: " + newData);
+  // currSerialVal = map(parseFloat(newData), 0, 1023, 0, 1);
+  receivedValsRaw = newData.split(",");
+  potVal = receivedValsRaw[0];
+  accelVal = receivedValsRaw[1];
+  xCurrentPos = parseFloat(potVal) * (width - CLOUD_WIDTH);
+  accelCurrVal = parseFloat(accelVal);
+  
+  // PARSE IN STRING _> FLOAT
+  // Set the currSerialVal (global) to be used in other functions
+}
+
+/**
+ * Called automatically by the browser through p5.js when mouse clicked
+ */
+function mouseClicked() {
+  if (!serial.isOpen()) {
+    serial.connectAndOpen(null, serialOptions);
+  }
+}
